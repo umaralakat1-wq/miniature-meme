@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nano Racer - Garage Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Inter', sans-serif; }
+        #game-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+        canvas { background: #333; box-shadow: 0 0 20px rgba(0,0,0,0.5); touch-action: none; display: block; }
+        .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.85); color: white; z-index: 10; padding: 20px; }
+        .hidden { display: none !important; }
+        .car-btn { border: 2px solid #555; padding: 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        .car-btn:hover { border-color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui-overlay" class="overlay">
+            <h1 class="text-5xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-red-500">NANO RACER</h1>
+            <p id="total-money" class="mb-8 text-yellow-400 font-bold text-2xl">Balance: ₹100</p>
+            <div class="flex gap-4">
+                <button id="start-btn" class="px-8 py-3 bg-blue-600 rounded-full text-xl font-bold hover:bg-blue-500 transition shadow-lg">START RACE</button>
+                <button id="garage-btn" class="px-8 py-3 bg-gray-700 rounded-full text-xl font-bold hover:bg-gray-600 transition shadow-lg">GARAGE</button>
+            </div>
+        </div>
+
+        <div id="garage-overlay" class="overlay hidden">
+            <h2 class="text-4xl font-bold mb-8">GARAGE</h2>
+            <div id="car-list" class="flex flex-wrap gap-4 justify-center mb-8"></div>
+            <button id="back-btn" class="px-8 py-3 bg-gray-600 rounded-full text-lg font-bold hover:bg-gray-500 transition">BACK</button>
+        </div>
+
+        <div id="game-over" class="overlay hidden">
+            <h2 class="text-4xl font-bold mb-4">RACE OVER</h2>
+            <p id="final-money" class="text-2xl mb-8"></p>
+            <button id="restart-btn" class="px-8 py-3 bg-red-600 rounded-full text-xl font-bold hover:bg-red-500 transition">MAIN MENU</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('ui-overlay');
+        const garageOverlay = document.getElementById('garage-overlay');
+        const gameOverDiv = document.getElementById('game-over');
+        const finalMoneyText = document.getElementById('final-money');
+        const moneyText = document.getElementById('total-money');
+        const carListDiv = document.getElementById('car-list');
+
+        let gameActive = false;
+        let money = 100;
+        let score = 0;
+        let playerX = 0;
+        let playerSpeed = 8;
+        let keys = {};
+        let animationId;
+        let obstacles = [];
+        let frameCount = 0;
+
+        // Realistic car color configuration
+        const cars = [
+            { id: 0, name: 'Red Sport', color: '#dc2626', price: 0, unlocked: true },
+            { id: 1, name: 'Blue GT', color: '#2563eb', price: 150, unlocked: false },
+            { id: 2, name: 'Gold Luxury', color: '#fbbf24', price: 500, unlocked: false }
+        ];
+        let selectedCar = cars[0];
+
+        // Event Listeners
+        document.addEventListener('keydown', (e) => keys[e.code] = true);
+        document.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        function drawCar(x, y, color) {
+            // Main Body
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect(x - 20, y - 35, 40, 70, 10);
+            ctx.fill();
+            
+            // Windshield
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(x - 15, y - 25, 30, 20);
+            
+            // Wheels
+            ctx.fillStyle = '#000';
+            ctx.fillRect(x - 22, y - 25, 6, 15); // Front Left
+            ctx.fillRect(x + 16, y - 25, 6, 15); // Front Right
+            ctx.fillRect(x - 22, y + 15, 6, 15); // Back Left
+            ctx.fillRect(x + 16, y + 15, 6, 15); // Back Right
+        }
+
+        function spawnObstacle() {
+            obstacles.push({
+                x: (Math.random() - 0.5) * (canvas.width - 100),
+                y: -100,
+                color: `hsl(${Math.random() * 360}, 70%, 50%)`
+            });
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            frameCount++;
+            if (frameCount % 60 === 0) spawnObstacle();
+
+            if (keys['ArrowLeft'] && playerX > -(canvas.width / 2 - 50)) playerX -= playerSpeed;
+            if (keys['ArrowRight'] && playerX < (canvas.width / 2 - 50)) playerX += playerSpeed;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Road
+            ctx.fillStyle = '#444';
+            ctx.fillRect(canvas.width/2 - 150, 0, 300, canvas.height);
+
+            // Draw Obstacles
+            obstacles.forEach((obs, index) => {
+                obs.y += 5;
+                drawCar(canvas.width / 2 + obs.x, obs.y, obs.color);
+                
+                // Collision
+                if (Math.abs(obs.y - (canvas.height - 150)) < 50 && Math.abs(obs.x - playerX) < 40) {
+                    gameOver();
+                }
+
+                if (obs.y > canvas.height) {
+                    obstacles.splice(index, 1);
+                    score += 10;
+                    money += 10;
+                    moneyText.innerText = `Balance: ₹${money}`;
+                }
+            });
+
+            // Draw Player
+            drawCar(canvas.width / 2 + playerX, canvas.height - 150, selectedCar.color);
+
+            animationId = requestAnimationFrame(update);
+        }
+
+        function startGame() {
+            gameActive = true;
+            obstacles = [];
+            score = 0;
+            playerX = 0;
+            overlay.classList.add('hidden');
+            gameOverDiv.classList.add('hidden');
+            update();
+        }
+
+        function gameOver() {
+            gameActive = false;
+            cancelAnimationFrame(animationId);
+            finalMoneyText.innerText = `You earned ₹${score}! Total: ₹${money}`;
+            gameOverDiv.classList.remove('hidden');
+        }
+
+        function openGarage() {
+            overlay.classList.add('hidden');
+            garageOverlay.classList.remove('hidden');
+            renderGarage();
+        }
+
+        function renderGarage() {
+            carListDiv.innerHTML = '';
+            cars.forEach(car => {
+                const btn = document.createElement('div');
+                btn.className = 'car-btn flex flex-col items-center gap-2';
+                btn.innerHTML = `
+                    <div style="width: 40px; height: 70px; background: ${car.color}; border-radius: 5px;"></div>
+                    <span class="font-bold">${car.name}</span>
+                    <button class="px-4 py-1 ${car.unlocked ? 'bg-green-600' : 'bg-blue-600'} rounded-full text-sm">
+                        ${car.unlocked ? 'Equipped' : 'Buy ₹' + car.price}
+                    </button>
+                `;
+                btn.onclick = () => {
+                    if (car.unlocked) {
+                        selectedCar = car;
+                        renderGarage();
+                    } else if (money >= car.price) {
+                        money -= car.price;
+                        car.unlocked = true;
+                        moneyText.innerText = `Balance: ₹${money}`;
+                        renderGarage();
+                    }
+                };
+                carListDiv.appendChild(btn);
+            });
+        }
+
+        // Setup
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+        window.dispatchEvent(new Event('resize'));
+
+        document.getElementById('start-btn').onclick = startGame;
+        document.getElementById('garage-btn').onclick = openGarage;
+        document.getElementById('back-btn').onclick = () => {
+            garageOverlay.classList.add('hidden');
+            overlay.classList.remove('hidden');
+        };
+        document.getElementById('restart-btn').onclick = () => {
+            gameOverDiv.classList.add('hidden');
+            overlay.classList.remove('hidden');
+        };
+    </script>
+</body>
+</html>
